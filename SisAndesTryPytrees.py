@@ -3,13 +3,8 @@ import rospy
 import time
 from robot_toolkit_msgs.msg import animation_msg
 from speech_recognition_msgs.srv import talk_speech_srv
-from perception_msgs.srv import (
-    start_recognition_srv,
-    look_for_object_srv,
-    read_qr_srv,
-    turn_camera_srv
-)
-from std_msgs.msg import Int32
+from perception_msgs.srv import start_recognition_srv, look_for_object_srv, read_qr_srv, turn_camera_srv
+from std_msgs.msg import Int32, String
 
 # Introducte event task
 class Initial(py_trees.behaviour.Behaviour):
@@ -20,9 +15,12 @@ class Initial(py_trees.behaviour.Behaviour):
     def setup(self, timeout):
         self.talkSpeechClient.call("I am going to do the Sisandes task", 2)
         return True
-
+    def initialise(self):
+        pass
     def update(self):
         return py_trees.common.Status.SUCCESS
+    def terminate(self, new_status):
+        pass
 
 
 # Waits for a person to be detected
@@ -47,6 +45,9 @@ class Wait4Guest(py_trees.behaviour.Behaviour):
         self.lookForSomethingServiceClient.call(reqLook)
         return True
 
+    def initialise(self):
+        pass
+
     def update(self):
         if self.found == 1:
             reqStart = start_recognition_srvRequest()
@@ -60,6 +61,8 @@ class Wait4Guest(py_trees.behaviour.Behaviour):
     def callback_look_for_object(self, msg):
         self.found = msg.data
 
+    def terminate(self, new_status):
+        pass
 
 # Receive people to the event
 class Receive(py_trees.behaviour.Behaviour):
@@ -82,4 +85,31 @@ class Check(py_trees.behaviour.Behaviour):
     def __init__(self, name):
         super().__init__(name)
         self.talkSpeechClient = rospy.ServiceProxy('/speech_utilities/talk_speech_srv', talk_speech_srv)
-        self.readQrCode
+        self.readQrCodeServiceClient = rospy.ServiceProxy('/perception_utilities/read_qr_srv', read_qr_srv)
+        self.animationPublisher = rospy.Publisher('/animations', animation_msg, queue_size=10)
+    def setup(self, timeout):
+        return True
+    def initialise(self):
+        pass
+    def update(self):
+        return py_trees.common.Status.SUCCESS
+    def terminate(self, new_status):
+        self.loggers[0].info("Terminating with status '{}'".format(new_status))
+
+def main ():
+    rospy.init_node('SisAndesTryPytrees')
+    root = py_trees.composites.Sequence("Root")
+    initial = Initial("Initial")
+    wait4Guest = Wait4Guest("Wait4Guest")
+    receive = Receive("Receive")
+    check = Check("Check")
+    root.add_children([initial, wait4Guest, receive, check])
+    behaviour_tree = py_trees.trees.BehaviourTree(root)
+    behaviour_tree.setup(timeout=15)
+    while not rospy.is_shutdown():
+        behaviour_tree.tick_tock(500)
+        time.sleep(0.5)    
+
+if __name__ == '__main__':
+    console_handler = py_trees.logging.StreamHandler()
+    main()
